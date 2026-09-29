@@ -4,7 +4,7 @@
 
 ## 1. Thông tin học viên
 
-- **Họ và tên:** Vũ Hiếu Thiên
+- **Họ và tên:** Vũ Hiệu Thiên
 - **MSSV:** 2A202602867
 - **Lớp:** K4-L3A
 - **Repository URL:** https://github.com/Soraishiro/K4-L3-DAY13-VuHieuThien-2A202602867-Monitoring-LLMOps
@@ -47,11 +47,11 @@
 | ----------------------- | -------------- | --------------- | ---------------------------------------------------------------------- |
 | `validate_logs.py`      | 72/100         | 100/100         | Điểm tăng nhờ thêm `retrieval_ms` vào log và `tool_success` đầy đủ     |
 | `validate_dashboard.py` | 6/6            | 6/6             | Validator chỉ đọc `config/dashboard.yaml`, không kiểm tra biểu đồ thật |
-| `pytest`                | 52 pass        | 49 pass         |                                                                        |
-| Số traces hợp lệ        | 0              | 100             | Chạy `load_test.py` nhiều lần với concurrency 3                        |
+| `pytest`                | 52 pass        | 49 pass         | 8 test viết cho phần dashboard dựng sẵn bị bỏ; 49 test còn lại là của TODO lab |
+| Số traces hợp lệ        | 0              | 195 root span    | Chạy `load_test.py` nhiều lần với concurrency 3                        |
 | Số PII leak             | 0              | 0               | Kiểm bằng 5 request chứa email/SĐT/CCCD/thẻ/địa chỉ giả                |
-| Latency P95 / TTFT P95  | 354 ms / 50 ms | 2654 ms / 50 ms | TTFT không đổi → thời gian nằm ở retrieval chứ không ở LLM             |
-| Retrieval success rate  | 100%           | 100%            | Trong cửa sổ challenge không có request nào lỗi                        |
+| Latency P95 / TTFT P95  | 354 ms / 50 ms | 3366 ms / 50 ms | Vượt ngưỡng SLO 3000 ms; TTFT đứng yên nên thời gian không nằm ở LLM   |
+| Retrieval success rate  | 100%           | 100%            | `rag_slow` chỉ làm chậm, không làm hỏng nên error rate vẫn 0%           |
 
 ## 4. Logging và PII
 
@@ -79,7 +79,7 @@
 
 Cột `trace_id` được dùng để tra trong Langfuse khi chụp `evidence/10-prompt-rollback.png`.
 
-- **Cách promote và rollback `production`:** gọi `client.api.prompt_version.update(name="day13-chat", version=2, new_labels=["candidate", "production"])` để promote, chạy lại workload rồi xác minh `prompt_version=2`. Rollback thì đặt version 2 về `["candidate"]` và version 1 về `["baseline", "production"]`, chạy lại và xác minh `prompt_version=1`. Langfuse chỉ cho một label tồn tại ở một version nên đổi label ở đây là thao tác loại trừ lẫn nhau. Ảnh trạng thái: `evidence/10a-promote.png`, `evidence/10b-rollback.png`.
+- **Cách promote và rollback `production`:** gọi `client.api.prompt_version.update(name="day13-chat", version=2, new_labels=["candidate", "production"])` để promote, chạy lại workload rồi xác minh `prompt_version=2`. Rollback thì đặt version 2 về `["candidate"]` và version 1 về `["baseline", "production"]`, chạy lại và xác minh `prompt_version=1`. Langfuse chỉ cho một label tồn tại ở một version nên đổi label ở đây là thao tác loại trừ lẫn nhau. Ảnh trạng thái trước và sau khi đổi label: `evidence/10-prompt-rollback.png`.
 
 ## 6. Dashboard, SLO và alerts
 
@@ -119,10 +119,10 @@ Cột `trace_id` được dùng để tra trong Langfuse khi chụp `evidence/10
   Một blocker nữa: API `GET /api/public/traces` của Langfuse đã trả 410 cho tổ chức tạo sau 16/09/2026, phải chuyển sang `GET /api/public/v2/observations` qua `client.api.observations.get_many()`, và phải truyền `fields` đúng kiểu (`"core"`, `"time"`, `"metadata"`) thì mới nhận được `prompt_version`; gọi không có `fields` thì mọi trường đều là `None`.
 
 - **Cách tìm nguyên nhân và xử lý:** đi đúng thứ tự metric → log → trace. Thấy p95 vượt ngưỡng ở panel latency thì lấy khoảng thời gian cột đỏ, lọc `data/logs.jsonl` theo phút đó để lấy `correlation_id`, rồi tra cùng ID trong Langfuse. Ở trace, so thời lượng từng span với tổng thời lượng. Ở đây retrieval chiếm 94.2% nên kết luận được ngay.
-- **Cách hiểu luồng Metrics → Logs → Traces:** metric cho biết _lúc nào_ và _bao nhiêu_ nhưng không cho biết request nào; log cho biết _request nào_ qua `correlation_id` nhưng không cho biết bên trong request đó gì chậm; trace mới chỉ ra _span nào_. Thiếu một tầng thì hai tầng còn lại chỉ dừng ở giả thuyết. Trong lần điều tra này tôi thấy thiếu một mắt xích là muốn biết thời gian nằm ở retrieval hay LLM thì phải đoán, nên mới thêm `retrieval_ms` — nó xuất phát từ đọc lại dashboard sau khi chạy challenge chứ không phải từ yêu cầu sẵn có.
-- **Vai trò của prompt version, token/cost, SLO hoặc rollback trong vận hành LLM:** prompt version cho phép đổi nội dung mà không sửa code, không deploy. Khi chất lượng tụt, rollback label `production` mất đúng một lệnh. Token và cost là hai mặt của cùng thứ: cùng câu hỏi nhưng prompt dài hơn thì tiền tăng, nên thấy `tokens_out` tăng vọt mà `tokens_in` đứng yên thường là model sinh thừa chứ không phải hệ thống chậm. SLO biến câu "chậm" mơ hồ thành con số để quyết định có cảnh báo không, và error budget cho biết còn được hỏng bao nhiêu trước khi phải dừng tính năng.
+- **Cách hiểu luồng Metrics → Logs → Traces:** Trước CP3 tôi tưởng đây là ba tầng độc lập cùng cấp. Sau khi điều tra thật thì thấy khác: metric và trace đều trả lời câu hỏi về *đại lượng tổng hợp*, còn log mới là thứ duy nhất giữ được danh tính từng request. Không có `correlation_id` thì tôi có 20 số p95 và 3 cây span vẫn không nối được vào nhau. Lần này còn thiếu một mắt xích nữa là phân biệt thời gian nằm ở retrieval hay LLM — TTFT đo ở model còn latency đo ở ngoài request, trừ hai số đó ra không cho đúng cái gì. Đó là lý do tôi thêm `retrieval_ms`: không phải vì đề bắt, mà vì sau khi nhìn dashboard tôi không trả lời được câu hỏi đó.
+- **Vai trò của prompt version, token/cost, SLO hoặc rollback trong vận hành LLM:** Việc đáng giá nhất mà tôi làm trong phần này là rollback prompt, vì nó biến "sửa lỗi lúc 3 giờ sáng" thành một lệnh. Trước khi có version/label, thay một câu trong prompt là sửa code rồi deploy, tức là phải hiểu code mới sửa được. Với cost thì bài học đến từ panel 4 và 5 đi cùng nhau: nhìn `tokens_out` tăng vọt trong khi `tokens_in` đứng yên thì gần như chắc chắn là model sinh thừa, không phải hệ thống chậm. Còn SLO thì không phải để cảnh báo cho nhiều hơn, mà để biết khi nào thôi cảnh báo — có error budget rồi thì việc quyết định có ship tính năng mới hay không không còn là tranh luận cảm xúc.
 - **Điều quan trọng nhất đã học:** phần khó nhất không phải cấu hình Langfuse mà là làm cho telemetry mang đúng nghĩa. `validate_dashboard.py` trả 6/6 ngay cả khi xóa hết notebook, vì nó chỉ đọc YAML — validator xanh không bảo chứng gì về chất lượng quan sát. Tôi cũng tự mắc đúng lỗi đó khi vẽ dashboard: tô màu đỏ mọi cột vượt ngưỡng, khiến hai panel dùng toán tử `gte` bị tô đỏ dù đang tốt. Metric và ngưỡng phải cùng aggregation **và** cùng chiều so sánh.
-- **Hạn chế hoặc phần chưa hoàn thành, nếu có:** quality score vẫn là heuristic đếm điểm theo độ dài và từ khóa, nên panel quality chỉ phát hiện hồi quy chứ không chứng minh câu trả lời đúng. Ba alert mới là đặc tả trong YAML, chưa nối Alertmanager thật nên chưa có bằng chứng Slack nhận thông báo. Challenge chính thức chỉ là `rag_slow`; `tool_fail` và `cost_spike` tôi mới chạy dạng practice và chưa đi hết chuỗi metric → log → trace cho từng cái. Baseline trong báo cáo lấy từ các request có latency < 1000 ms, vì cửa sổ 60 phút gộp cả các lần chạy lẫn nhau. Repository URL và commit SHA còn để trống chờ push.
+- **Hạn chế hoặc phần chưa hoàn thành, nếu có:** quality score vẫn là heuristic đếm điểm theo độ dài và từ khóa, nên panel quality chỉ phát hiện hồi quy chứ không chứng minh câu trả lời đúng. Ba alert mới là đặc tả trong YAML, chưa nối Alertmanager thật nên chưa có bằng chứng Slack nhận thông báo. Challenge chính thức chỉ là `rag_slow`; `tool_fail` và `cost_spike` tôi mới chạy dạng practice và chưa đi hết chuỗi metric → log → trace cho từng cái. Baseline trong bảng mục 3 lấy từ các request có latency < 1000 ms, vì cửa sổ 60 phút gộp cả các lần chạy lẫn nhau. Ảnh `05b` hiển thị log gốc nên tiếng Việt bị escape thành `\uXXXX` (do `json.dumps` mặc định `ensure_ascii=True`); các marker `[REDACTED_*]` vẫn đọc được.
 
 ## 9. Checklist trước khi nộp
 
