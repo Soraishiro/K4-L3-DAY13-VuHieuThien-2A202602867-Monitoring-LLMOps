@@ -5,9 +5,9 @@ import time
 from dataclasses import dataclass
 
 from . import metrics
-from .mock_llm import FakeLLM
+from .mock_llm import FakeLLM, estimate_cost_usd
 from .mock_rag import retrieve
-from .pii import hash_user_id, summarize_text
+from .pii import hash_user_id, scrub_text, summarize_text
 from .prompt_management import resolve_prompt
 from .tracing import get_langfuse_client, observe, propagate_attributes, tracing_enabled
 
@@ -17,6 +17,7 @@ class AgentResult:
     answer: str
     latency_ms: int
     ttft_ms: int
+    retrieval_ms: int
     tokens_in: int
     tokens_out: int
     cost_usd: float
@@ -51,7 +52,12 @@ class LabAgent:
             },
         ):
             started = time.perf_counter()
+            langfuse_client.update_current_span(
+                input=[{"role": "user", "content": scrub_text(message)}]
+            )
+            retrieval_started = time.perf_counter()
             docs = retrieve(message)
+            retrieval_ms = int((time.perf_counter() - retrieval_started) * 1000)
             prompt = resolve_prompt(
                 langfuse_client,
                 feature=feature,
@@ -59,7 +65,15 @@ class LabAgent:
                 message=message,
                 enabled=tracing_enabled(),
             )
+            with propagate_attributes(prompt=prompt.managed_prompt):
+                response = self.llm.generate(
+                    prompt.text, managed_prompt=prompt.managed_prompt
+                )
+            quality_score = self._heuristic_quality(message, response.text, docs)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
             langfuse_client.update_current_span(
+                output=[{"role": "assistant", "content": scrub_text(response.text)}],
                 metadata={
                     "doc_count": len(docs),
                     "query_preview": summarize_text(message),
@@ -68,16 +82,10 @@ class LabAgent:
                     "prompt_version": prompt.version,
                     "prompt_source": prompt.source,
                     "prompt_fetch_error": prompt.fetch_error or "",
+                    "retrieval_ms": retrieval_ms,
                 },
                 version=prompt.version,
             )
-            # TODO (CP2): instrument retrieve() and FakeLLM.generate() as child
-            # observations. The nested generation must receive prompt, usage and cost.
-            with propagate_attributes(prompt=prompt.managed_prompt):
-                response = self.llm.generate(prompt.text)
-            quality_score = self._heuristic_quality(message, response.text, docs)
-            latency_ms = int((time.perf_counter() - started) * 1000)
-            cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
 
         metrics.record_request(
             latency_ms=latency_ms,
@@ -92,6 +100,7 @@ class LabAgent:
             answer=response.text,
             latency_ms=latency_ms,
             ttft_ms=response.ttft_ms,
+            retrieval_ms=retrieval_ms,
             tokens_in=response.usage.input_tokens,
             tokens_out=response.usage.output_tokens,
             cost_usd=cost_usd,
@@ -99,9 +108,7 @@ class LabAgent:
         )
 
     def _estimate_cost(self, tokens_in: int, tokens_out: int) -> float:
-        input_cost = (tokens_in / 1_000_000) * 3
-        output_cost = (tokens_out / 1_000_000) * 15
-        return round(input_cost + output_cost, 6)
+        return estimate_cost_usd(self.model, tokens_in, tokens_out)
 
     def _heuristic_quality(self, question: str, answer: str, docs: list[str]) -> float:
         score = 0.5

@@ -63,6 +63,7 @@ def test_agent_records_prompt_version_with_v4_observation_api(monkeypatch) -> No
         "prompt_version": "3",
         "prompt_source": "langfuse",
         "prompt_fetch_error": "",
+        "retrieval_ms": 0,
     }
     assert span_update["version"] == "3"
     assert propagated[0]["metadata"]["correlation_id"] == "req-12345678"

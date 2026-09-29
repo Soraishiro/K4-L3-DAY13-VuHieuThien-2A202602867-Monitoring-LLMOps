@@ -10,11 +10,11 @@ from structlog.contextvars import bind_contextvars
 from .agent import LabAgent
 from .incidents import disable, enable, status
 from .logging_config import configure_logging, get_logger
-from .metrics import record_error, snapshot
+from .metrics import record_error, record_request_started, record_tool_result, snapshot
 from .middleware import CorrelationIdMiddleware
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
-from .tracing import tracing_enabled
+from .tracing import flush_tracing, tracing_enabled
 
 configure_logging()
 log = get_logger()
@@ -30,6 +30,8 @@ async def lifespan(_: FastAPI):
         payload={"tracing_enabled": tracing_enabled()},
     )
     yield
+    flush_tracing()
+    log.info("app_stopped", service=os.getenv("APP_NAME", "day13-monitoring-llmops-lab"))
 
 
 app = FastAPI(title="Day 13 Monitoring & LLMOps Lab", lifespan=lifespan)
@@ -48,9 +50,20 @@ async def metrics() -> dict:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
-    # TODO: Enrich logs with request context (user_id_hash, session_id, feature, model, env)
-    # bind_contextvars(...)
-    
+    # Traffic đếm ngay khi request đi vào hệ thống, không phụ thuộc kết quả.
+    # Nhờ vậy một đợt toàn lỗi vẫn cho error_rate_pct() = 100% thay vì 0%.
+    record_request_started()
+
+    # Bind context TRƯỚC dòng log đầu tiên để mọi log sau của request này
+    # (kể cả log trong agent) đều mang cùng một bộ metadata.
+    bind_contextvars(
+        user_id_hash=hash_user_id(body.user_id),
+        session_id=body.session_id,
+        feature=body.feature,
+        model=agent.model,
+        env=os.getenv("APP_ENV", "dev"),
+    )
+
     log.info(
         "request_received",
         service="api",
@@ -64,11 +77,13 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             message=body.message,
             correlation_id=request.state.correlation_id,
         )
+        record_tool_result("retrieval", True)
         log.info(
             "response_sent",
             service="api",
             latency_ms=result.latency_ms,
             ttft_ms=result.ttft_ms,
+            retrieval_ms=result.retrieval_ms,
             tokens_in=result.tokens_in,
             tokens_out=result.tokens_out,
             cost_usd=result.cost_usd,
@@ -90,6 +105,8 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     except Exception as exc:  # pragma: no cover
         error_type = type(exc).__name__
         record_error(error_type)
+        if isinstance(exc, RuntimeError):
+            record_tool_result("retrieval", False)
         log.error(
             "request_failed",
             service="api",

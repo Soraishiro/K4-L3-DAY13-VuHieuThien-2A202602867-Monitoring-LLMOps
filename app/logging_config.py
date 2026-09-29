@@ -24,13 +24,20 @@ class JsonlFileProcessor:
 
 
 def scrub_event(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
-    payload = event_dict.get("payload")
-    if isinstance(payload, dict):
-        event_dict["payload"] = {
-            k: scrub_text(v) if isinstance(v, str) else v for k, v in payload.items()
-        }
-    if "event" in event_dict and isinstance(event_dict["event"], str):
-        event_dict["event"] = scrub_text(event_dict["event"])
+    """Che PII trên MỌI giá trị chuỗi trước khi render/ghi file.
+
+    Chạy trước JsonlFileProcessor và JSONRenderer, nên cả file `data/logs.jsonl`
+    lẫn stdout đều đã được scrub. Không chỉ scrub `payload` vì metadata do người
+    dùng gửi lên (session_id, feature...) cũng có thể chứa PII.
+    """
+    for key, value in list(event_dict.items()):
+        if isinstance(value, str):
+            event_dict[key] = scrub_text(value)
+        elif isinstance(value, dict):
+            event_dict[key] = {
+                nested_key: scrub_text(nested_value) if isinstance(nested_value, str) else nested_value
+                for nested_key, nested_value in value.items()
+            }
     return event_dict
 
 
@@ -42,8 +49,7 @@ def configure_logging() -> None:
             merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True, key="ts"),
-            # TODO: Register your PII scrubbing processor here
-            # scrub_event,
+            scrub_event,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             JsonlFileProcessor(),

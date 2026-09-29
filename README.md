@@ -57,9 +57,9 @@ cp .env.example .env
 Tự đăng ký/đăng nhập [Langfuse Cloud](https://cloud.langfuse.com), tạo project riêng tên `day13-k4-l3a-<MSSV>`, rồi vào **Project Settings → API Keys** để tạo key pair. Điền key của chính project đó vào `.env`:
 
 ```dotenv
-LANGFUSE_PUBLIC_KEY=pk-lf-...
-LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_SECRET_KEY="sk-lf-cda5f68e-1ec1-4cd8-b8ba-2a088b627a0f"
+LANGFUSE_PUBLIC_KEY="pk-lf-46d0ef0e-8160-4bce-bb08-2a0bef7a759f"
+LANGFUSE_BASE_URL="https://jp.cloud.langfuse.com"
 LANGFUSE_PROMPT_NAME=day13-chat
 LANGFUSE_PROMPT_LABEL=production
 ```
@@ -87,13 +87,13 @@ Baseline log chưa đạt là bình thường vì các `TODO` của CP1 chưa đ
 
 ## Lộ trình 14:00–18:00 (240 phút)
 
-| Mốc | Thời gian | Việc chính | Hoàn thành khi |
-|---|---:|---|---|
-| CP0 | 14:00–14:30 (0–30 phút) | Setup, chạy API và baseline | `/health` trả `ok: true`, log được tạo |
-| CP1 | 14:30–15:20 (30–80 phút) | Correlation ID, structured log, PII | `validate_logs.py` đạt ít nhất 80/100 |
-| CP2 | 15:20–16:40 (80–160 phút) | Trace, prompt, dashboard, SLO/alert | có span tree; dashboard validator đạt 6/6 |
-| CP3 | 16:40–17:30 (160–210 phút) | Điều tra challenge K4-L3A | có metric, log và trace cùng một request |
-| CP4 | 17:30–18:00 (210–240 phút) | Report, evidence và kiểm tra cuối | tests/validators chạy xong trên commit nộp |
+| Mốc |                  Thời gian | Việc chính                          | Hoàn thành khi                             |
+| --- | -------------------------: | ----------------------------------- | ------------------------------------------ |
+| CP0 |    14:00–14:30 (0–30 phút) | Setup, chạy API và baseline         | `/health` trả `ok: true`, log được tạo     |
+| CP1 |   14:30–15:20 (30–80 phút) | Correlation ID, structured log, PII | `validate_logs.py` đạt ít nhất 80/100      |
+| CP2 |  15:20–16:40 (80–160 phút) | Trace, prompt, dashboard, SLO/alert | có span tree; dashboard validator đạt 6/6  |
+| CP3 | 16:40–17:30 (160–210 phút) | Điều tra challenge K4-L3A           | có metric, log và trace cùng một request   |
+| CP4 | 17:30–18:00 (210–240 phút) | Report, evidence và kiểm tra cuối   | tests/validators chạy xong trên commit nộp |
 
 Chi tiết từng checkpoint nằm trong [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md).
 

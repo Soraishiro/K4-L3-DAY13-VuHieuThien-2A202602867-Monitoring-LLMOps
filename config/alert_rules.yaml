@@ -1,25 +1,56 @@
+# Ba alert đều theo TRIỆU CHỨNG NGƯỜI DÙNG (symptom-based), không theo tên
+# implementation nội bộ. Nếu đổi "rag_slow" thành bất kỳ hệt thống nào khác thì
+# điều kiện vẫn đúng vì nó đo trên latency/SLO, không đo trên tên component.
 alerts:
-  - name: TODO_alert_1
-    severity: TODO
-    condition: TODO
-    duration: TODO
+  - name: user_visible_latency_burn
+    severity: critical
+    condition: >-
+      percentile(latency_ms, 95) over 5m > 3000
+      AND count(event == "response_sent") over 5m >= 5
+    duration: 5m
     type: symptom-based
+    slo_link: primary_slo:fast_successful_requests
     channel: slack
-    owner: TODO
+    slack_channel: "#day13-alerts-critical"
+    owner: "on-call LLMOps (K4-L3A)"
     runbook: docs/alerts.md#alert-1
-  - name: TODO_alert_2
-    severity: TODO
-    condition: TODO
-    duration: TODO
+    rationale: >-
+      Chặn traffic > 0 để incident traffic = 0 không bị báo động giả, và chặn
+      < 5 request vì percentile của mẫu quá nhỏ rất dễ bị một request chậm
+      đẩy vọt lên. 5 phút là thời gian đủ để loại nhiễu mạng nhưng vẫn sớm hơn
+      thời gian người dùng chịu đựng (~3.5 phút cho 10 giây thêm mỗi request).
+
+  - name: error_budget_burn_fast
+    severity: critical
+    condition: >-
+      error_rate_pct over 10m > 2
+      AND error_rate_pct > 3 * (100 - primary_slo.target_percent)
+    duration: 10m
     type: symptom-based
+    slo_link: primary_slo:fast_successful_requests
     channel: slack
-    owner: TODO
+    slack_channel: "#day13-alerts-critical"
+    owner: "on-call LLMOps (K4-L3A)"
     runbook: docs/alerts.md#alert-2
-  - name: TODO_alert_3
-    severity: TODO
-    condition: TODO
-    duration: TODO
+    rationale: >-
+      3 lần ngân sách lỗi là ngưỡng burn-rate chuẩn của Google SRE: với SLO
+      99.5%, ngân sách lỗi 28 ngày là 202 phút, đốt hết trong 10 phút tức hệ
+      thống sẽ hết ngân sách sau ~4.7 ngày thay vì 28 ngày.
+
+  - name: retrieval_and_cost_regression
+    severity: warning
+    condition: >-
+      (tool_success_rate_pct over 15m < 90)
+      OR (sum(cost_usd) over 60m > 2.5)
+    duration: 15m
     type: symptom-based
+    slo_link: secondary_slos:retrieval_quality
     channel: slack
-    owner: TODO
+    slack_channel: "#day13-alerts-warning"
+    owner: "owner AI platform (K4-L3A)"
     runbook: docs/alerts.md#alert-3
+    rationale: >-
+      Gộp hai triệu chứng "ngân sách tài nguyên" vì cả hai đều là hậu quả người
+      dùng thấy được (câu trả lời sai, hoá đơn tăng) nhưng chưa đủ nghiêm trọng để
+      đánh thức on-call. Duration 15m vì retrieval fail khi hết hạn mới lộ ra,
+      còn cost thì tích luỹ nên cần cửa sổ dài hơn latency.

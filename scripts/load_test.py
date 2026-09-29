@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.challenge import load_challenge, ordered_queries
+from app.challenge import load_official_challenge, ordered_queries
 from app.cli import configure_utf8_stdio
 
 BASE_URL = "http://127.0.0.1:8000"
@@ -40,7 +40,8 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.challenge:
-        challenge = load_challenge()
+        # Official mode: khóa challenge_id/cohort của bài Day 13.
+        challenge = load_official_challenge()
         payloads = ordered_queries(challenge)
         print(f"Challenge: {challenge.challenge_id} | Cohort: {challenge.cohort}")
     else:

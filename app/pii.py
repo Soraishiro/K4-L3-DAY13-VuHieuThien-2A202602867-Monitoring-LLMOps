@@ -3,13 +3,27 @@ from __future__ import annotations
 import hashlib
 import re
 
+# Thứ tự quan trọng: pattern tổng quát phải đứng sau pattern cụ thể hơn, ví dụ
+# email trước CCCD, để không bị che sai phần dữ liệu.
+
+# "12 Nguyễn Trãi" hoặc "45 Lê Lợi" — số nhà + tên đường viết hoa chữ đầu.
+_VN_STREET = r"\d{1,4}\s+(?:[A-ZĐ][\wÀ-ỹ]*\s+){0,3}[A-ZĐ][\wÀ-ỹ]*"
+# "Phường Bến Nghệ", "Quận 1", "Thị xã Thủ Dầu Một" — dấu hiệu hành chính.
+_VN_ADMIN = (
+    r"(?:Phường|Ph\.|Quận|Qu\.|Huyện|Huy\.|Thị\s*xã|Thành\s*phố|Tỉnh)"
+    r"\s*[A-ZĐ]?[\wÀ-ỹ.]*(?:\s+[A-ZĐ][\wÀ-ỹ.]*)*"
+)
+
 PII_PATTERNS: dict[str, str] = {
     "email": r"[\w\.-]+@[\w\.-]+\.\w+",
     "phone_vn": r"(?<!\d)(?:\+84|0)(?:[ .-]?\d){9}(?!\d)",
-    "cccd": r"\b\d{12}\b",
     "credit_card": r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b",
-    # TODO: Add more patterns (e.g., Passport, Vietnamese address keywords)
+    "cccd": r"\b\d{12}\b",
+    "passport": r"\b[A-Z]{1,2}\d{7}\b",
+    "vn_address": rf"{_VN_STREET},\s*{_VN_ADMIN}(?:[\s,]+{_VN_ADMIN})*",
 }
+
+PII_LABELS: tuple[str, ...] = tuple(PII_PATTERNS)
 
 
 def scrub_text(text: str) -> str:

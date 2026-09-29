@@ -1,4 +1,13 @@
 service: day13-l3a-monitoring-llmops-lab
+
+# Baseline đo được từ data/logs.jsonl (CP2, 99 request không bị incident):
+#   p50 = 152 ms | p95 = 354 ms | p99 = 462 ms | ttft p95 = 50 ms
+#   retrieval p95 = 1 ms | error rate = 0.00% | retrieval success = 100%
+#   cost/request = $0.0031 | quality mean = 0.877
+# Challenge chính thức (CP3, rag_slow, 5 request): latency 2653-2656 ms,
+#   retrieval_ms = 2500, ttft p95 giữ nguyên 50 ms. Vi phạm SLO latency, không
+#   vi phạm SLO availability. Xem docs/alerts.md#alert-1 về khoảng hở của ngưỡng.
+# Ngưỡng dưới đây được chọn dựa trên số đo này, không copy mặc định.
 primary_slo:
   name: fast_successful_requests
   window: 28d
@@ -7,9 +16,55 @@ primary_slo:
     total_event: 'event == "request_received"'
   target_percent: 99.5
   error_budget_percent: 0.5
-  note: Học viên phải giải thích hoặc điều chỉnh ngưỡng bằng baseline của mình.
+  rationale: >-
+    3000 ms là ngưỡng contract của panel latency, nhưng baseline chỉ 354 ms nên
+    headroom rất lớn. Ta giữ 3000 ms thay vì siết theo baseline vì p99 của một
+    workload học thuyết không đại diện được tail khi hệ thống thật chạy đông.
+    99.5%/28d cho phép 3 phút 36 giây "rác" mỗi 28 ngày. Đổi lại, một sự cố
+    chậm vừa đủ (như rag_slow ở 2652 ms) sẽ không phá SLO, nên cần alert riêng
+    theo retrieval_ms bù cho khoảng hở này.
+  error_budget:
+    window_days: 28
+    window_minutes: 40320
+    allowed_bad_minutes: 202
+    # error_budget_percent = 100 - target_percent
+    # 40320 * 0.005 = 201.6 -> làm tròn 202 phút rác tối đa trong 28 ngày.
+    # burn_rate_1h: alert khi tiêu hết ngân sách 28 ngày trong 1 giờ
+    #   -> 40320/28 = 1440 phút rác/h (fast burn, 14.4x so với 100 phút/h bình thường)
+    #   -> fast_burn_hours_to_exhaust: 28 * 24 / 14.4 = 46.7 giờ
+    burn_rate:
+      fast_burn_factor: 14.4
+      fast_burn_window: 1h
+      fast_burn_hours_to_exhaust: 46.7
+      slow_burn_factor: 6
+      slow_burn_window: 6h
+      slow_burn_days_to_exhaust: 4.7
+    current_status:
+      observed_error_budget_used_percent: 0.0
+      observed_bad_minutes: 0
+      note: >-
+        Challenge chính thức (day13-k4-l3a-monitoring-llmops-v1) là incident
+        rag_slow: không có request nào fail, nên error budget còn nguyên 100%.
+        Sự cố này vi phạm SLO latency chứ không phải SLO availability. Phải
+        tính lại sau khi có sự cố thật gây lỗi, không để lại số 0 mặc định.
+
 guardrails:
   error_rate_pct_max: 2
   daily_cost_usd_max: 2.5
   quality_score_avg_min: 0.75
   retrieval_success_rate_pct_min: 90
+
+secondary_slos:
+  - name: retrieval_quality
+    sli: 'tool_success == true'
+    target_percent: 99
+    note: >-
+      Retrieval hỏng làm câu trả lời sai chứ không chỉ chậm, nên nó có SLO riêng
+      thay vì bị gộp vào error rate. Incident `tool_fail` làm panel này về 0%.
+  - name: cost_per_window
+    sli: 'sum(cost_usd)'
+    target_percent: 100
+    note: >-
+      Không dùng SLO tỷ lệ cho cost, dùng budget tuyệt đối: tối đa 2.5 USD/cửa
+      sổ dashboard. Incident `cost_spike` nhân output token lên 4 làm vỡ ngân sách
+      này trước khi người dùng kịp cảm nhận được gì.

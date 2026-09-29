@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.challenge import resolve_incident
+from app.challenge import load_official_challenge
 from app.cli import configure_utf8_stdio
 
 BASE_URL = "http://127.0.0.1:8000"
@@ -27,7 +27,19 @@ def main() -> None:
     parser.add_argument("--disable", action="store_true")
     args = parser.parse_args()
 
-    scenario = resolve_incident(args.scenario)
+    # Không truyền --scenario nghĩa là đang chạy official: khóa identity của
+    # challenge Day 13 trước khi bật incident, để bằng chứng gắn đúng challenge.
+    challenge = None
+    if args.scenario is None:
+        challenge = load_official_challenge()
+        scenario = challenge.incident
+        print(
+            f"Official challenge: {challenge.challenge_id} "
+            f"(cohort={challenge.cohort}) -> incident={scenario}"
+        )
+    else:
+        scenario = args.scenario
+
     path = f"/incidents/{scenario}/disable" if args.disable else f"/incidents/{scenario}/enable"
     r = httpx.post(f"{BASE_URL}{path}", timeout=10.0)
     print(r.status_code, r.json())

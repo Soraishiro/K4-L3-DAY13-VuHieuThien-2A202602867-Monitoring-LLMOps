@@ -11,6 +11,12 @@ from .incidents import STATE
 
 REQUIRED_QUERY_FIELDS = {"user_id", "session_id", "feature", "message"}
 
+# Bài này chỉ có một challenge chính thức. Loader vẫn giữ tính tổng quát (chấp
+# nhận cả K3/K4, challenge_id bất kỳ) vì starter test cần dùng fixture K3, nhưng
+# các entrypoint chạy official mode phải khóa đúng identity này.
+OFFICIAL_CHALLENGE_ID = "day13-k4-l3a-monitoring-llmops-v1"
+OFFICIAL_COHORT = "K4"
+
 
 @dataclass(frozen=True)
 class ChallengeConfig:
@@ -84,6 +90,27 @@ def load_challenge(path: str | Path = "config/challenge.json") -> ChallengeConfi
         latency_threshold_ms=latency_threshold_ms,
         queries=tuple(queries),
     )
+
+
+def load_official_challenge(
+    path: str | Path = "config/challenge.json",
+) -> ChallengeConfig:
+    """Nạp challenge và bắt buộc khớp identity của bài Day 13 này.
+
+    Dùng ở mọi đường chạy "official" (inject_incident.py không truyền
+    --scenario, load_test.py --challenge) để bằng chứng suy ra được từ đúng
+    challenge Lab Coach release, không phải từ file tự dựng.
+    """
+    challenge = load_challenge(path)
+    if challenge.cohort != OFFICIAL_COHORT or challenge.challenge_id != OFFICIAL_CHALLENGE_ID:
+        raise ValueError(
+            "Sai challenge chính thức: cần cohort="
+            f"{OFFICIAL_COHORT} challenge_id={OFFICIAL_CHALLENGE_ID}, "
+            f"nhận được cohort={challenge.cohort} "
+            f"challenge_id={challenge.challenge_id}. "
+            "Chỉ chạy được sau khi Lab Coach release config/challenge.json."
+        )
+    return challenge
 
 
 def resolve_incident(
