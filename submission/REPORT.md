@@ -8,7 +8,11 @@
 - **MSSV:** 2A202602867
 - **Lớp:** K4-L3A
 - **Repository URL:** https://github.com/Soraishiro/K4-L3-DAY13-VuHieuThien-2A202602867-Monitoring-LLMOps
-- **Commit SHA cuối:** _(điền sau khi push)_
+- **Commit SHA cuối:** `6a07e99f80bfeedafa2b191e0e92f398aa56c7fd`
+
+  Đây là commit chứa toàn bộ source, config, evidence và nội dung report. Commit
+  kế tiếp chỉ thêm dòng SHA này vào report, không sửa gì khác, nên không thể tự
+  chứa SHA của chính nó. Khi nộp, điền SHA trên.
 - **Challenge ID:** `day13-k4-l3a-monitoring-llmops-v1`
 - **Tên project Langfuse cá nhân:** `day13-k4-l3a-2A202602867`
 
